@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Editor de Apariencia - LandingKit</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:system-ui,sans-serif;background:#f5f5f5;padding:20px}
+    .container{max-width:800px;margin:0 auto}
+    .header{background:#6366f1;color:white;padding:20px;border-radius:12px;margin-bottom:20px}
+    .card{background:white;border-radius:12px;padding:20px;margin-bottom:20px;box-shadow:0 2px 4px rgba(0,0,0,0.1)}
+    .form-group{margin-bottom:15px}
+    label{display:block;margin-bottom:5px;font-weight:600}
+    input,textarea,select{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px}
+    .color-preview{width:40px;height:40px;border-radius:8px;display:inline-block;margin-left:10px;border:1px solid #ddd}
+    .btn{background:#6366f1;color:white;border:none;padding:12px 24px;border-radius:8px;cursor:pointer;margin-right:10px}
+    .login{max-width:400px;margin:100px auto;background:white;padding:30px;border-radius:12px}
+    .preview{padding:20px;border-radius:12px;margin-top:20px}
+  </style>
+</head>
+<body>
+<div id="login" class="login">
+  <h2>🎨 Editor de Apariencia</h2>
+  <input type="email" id="email" placeholder="Email de administrador">
+  <button class="btn" style="width:100%" onclick="requestCode()">Enviar código</button>
+  <div id="codeSection" style="display:none;margin-top:15px">
+    <input type="text" id="code" placeholder="Código de 6 caracteres">
+    <button class="btn" style="width:100%" onclick="verifyCode()">Verificar</button>
+  </div>
+</div>
+
+<div id="editor" style="display:none">
+  <div class="container">
+    <div class="header">
+      <h1>🎨 Editor de Apariencia</h1>
+      <button onclick="logout()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 16px;border-radius:8px;cursor:pointer;margin-top:10px">Salir</button>
+    </div>
+    
+    <div class="card">
+      <h3>Seleccionar Tienda</h3>
+      <select id="storeSelect" onchange="loadStoreConfig()">
+        <option value="">Cargando tiendas...</option>
+      </select>
+    </div>
+    
+    <div class="card" id="configForm" style="display:none">
+      <h3>Configuración de <span id="storeName"></span></h3>
+      
+      <div class="form-group">
+        <label>Logo (URL)</label>
+        <input type="text" id="logo" placeholder="https://...">
+      </div>
+      
+      <div class="form-group">
+        <label>Color Principal</label>
+        <div style="display:flex;align-items:center">
+          <input type="color" id="primaryColor" value="#6366f1" style="width:60px">
+          <span class="color-preview" id="colorPreview"></span>
+        </div>
+      </div>
+      
+      <div class="form-group">
+        <label>Descripción</label>
+        <textarea id="description" rows="3" placeholder="Describe tu tienda..."></textarea>
+      </div>
+      
+      <div class="form-group">
+        <label>WhatsApp (opcional)</label>
+        <input type="text" id="whatsapp" placeholder="5512345678">
+      </div>
+      
+      <div class="form-group">
+        <label>Ubicación (dirección)</label>
+        <input type="text" id="storeLocation" placeholder="Calle, número, ciudad">
+      </div>
+      
+      <div class="form-group">
+        <label>Mostrar en directorio público</label>
+        <select id="inDirectory">
+          <option value="true">Sí</option>
+          <option value="false">No</option>
+        </select>
+      </div>
+      
+      <button class="btn" onclick="saveConfig()">💾 Guardar cambios</button>
+      <button class="btn" style="background:#00d98b" onclick="previewStore()">👁️ Vista previa</button>
+    </div>
+    
+    <div class="card" id="preview" style="display:none">
+      <h3>Vista Previa</h3>
+      <div id="previewContent" class="preview"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'https://script.google.com/macros/s/AKfycbwQ_ESx2c-3DL83b_-ujjmvevSBGtwjPZ0e1wEHv3cnLbJOplTJDYUb_UiRVyTYXik/exec';
+let token = localStorage.getItem('adminToken');
+let stores = [];
+let currentStore = null;
+
+if(token) showEditor();
+
+async function requestCode(){
+  const email = document.getElementById('email').value;
+  const res = await fetch(API,{method:'POST',body:JSON.stringify({action:'admin.requestCode',email})});
+  const d = await res.json();
+  if(d.ok){document.getElementById('codeSection').style.display='block';alert('Código enviado')}
+}
+
+async function verifyCode(){
+  const email = document.getElementById('email').value;
+  const code = document.getElementById('code').value;
+  const res = await fetch(API,{method:'POST',body:JSON.stringify({action:'admin.verifyCode',email,code})});
+  const d = await res.json();
+  if(d.ok){localStorage.setItem('adminToken',d.token);showEditor()}
+}
+
+async function showEditor(){
+  document.getElementById('login').style.display='none';
+  document.getElementById('editor').style.display='block';
+  token = localStorage.getItem('adminToken');
+  await loadStores();
+}
+
+async function loadStores(){
+  const res = await fetch(API+'?action=admin.stores.list&token='+token);
+  const d = await res.json();
+  if(d.ok){
+    stores = d.stores;
+    const select = document.getElementById('storeSelect');
+    select.innerHTML = stores.map(s => `<option value="${s.storeId}">${s.name}</option>`).join('');
+    if(stores.length) loadStoreConfig();
+  }
+}
+
+function loadStoreConfig(){
+  const storeId = document.getElementById('storeSelect').value;
+  currentStore = stores.find(s => s.storeId === storeId);
+  if(!currentStore) return;
+  
+  document.getElementById('configForm').style.display='block';
+  document.getElementById('storeName').textContent = currentStore.name;
+  
+  const config = currentStore.config || {};
+  document.getElementById('logo').value = config.logo || '';
+  document.getElementById('primaryColor').value = config.primaryColor || '#6366f1';
+  document.getElementById('description').value = config.description || '';
+  document.getElementById('whatsapp').value = config.whatsapp || '';
+  document.getElementById('storeLocation').value = config.storeLocation || '';
+  document.getElementById('inDirectory').value = config.inDirectory !== false ? 'true' : 'false';
+  
+  updateColorPreview();
+  document.getElementById('primaryColor').addEventListener('input', updateColorPreview);
+}
+
+function updateColorPreview(){
+  document.getElementById('colorPreview').style.backgroundColor = document.getElementById('primaryColor').value;
+}
+
+async function saveConfig(){
+  const config = {
+    logo: document.getElementById('logo').value,
+    primaryColor: document.getElementById('primaryColor').value,
+    description: document.getElementById('description').value,
+    whatsapp: document.getElementById('whatsapp').value,
+    storeLocation: document.getElementById('storeLocation').value,
+    inDirectory: document.getElementById('inDirectory').value === 'true'
+  };
+  
+  const res = await fetch(API,{
+    method:'POST',
+    body:JSON.stringify({
+      action:'admin.store.update',
+      token,
+      storeId: currentStore.storeId,
+      configExtra: config
+    })
+  });
+  
+  const d = await res.json();
+  if(d.ok) alert('✅ Configuración guardada');
+}
+
+function previewStore(){
+  const preview = document.getElementById('preview');
+  const content = document.getElementById('previewContent');
+  const color = document.getElementById('primaryColor').value;
+  
+  content.innerHTML = `
+    <div style="background:${color};color:white;padding:20px;border-radius:8px;margin-bottom:15px">
+      ${document.getElementById('logo').value ? '<img src="'+document.getElementById('logo').value+'" style="max-height:40px">' : ''}
+      <h2>${currentStore.name}</h2>
+      <p>${document.getElementById('description').value}</p>
+    </div>
+    <p>📍 ${document.getElementById('storeLocation').value}</p>
+    <p>📱 ${document.getElementById('whatsapp').value}</p>
+    <p>👁️ En directorio: ${document.getElementById('inDirectory').value === 'true' ? 'Sí' : 'No'}</p>
+  `;
+  
+  preview.style.display = 'block';
+}
+
+function logout(){localStorage.clear();location.reload();}
+</script>
+</body>
+</html>
