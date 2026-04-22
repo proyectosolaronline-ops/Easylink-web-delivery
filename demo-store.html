@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Demo Store</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui;background:#f5f5f5;padding-bottom:80px}
+.header{background:#ff6b35;color:white;padding:20px}
+.container{max-width:1200px;margin:0 auto;padding:20px}
+.section{margin:30px 0}
+.section h2{margin-bottom:15px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:15px}
+.card{background:white;border-radius:12px;padding:15px;box-shadow:0 2px 4px rgba(0,0,0,0.1);cursor:pointer}
+.card img{width:100%;height:120px;object-fit:cover;border-radius:8px}
+.price{color:#ff6b35;font-size:20px;font-weight:bold;margin:5px 0}
+.cart-bar{position:fixed;bottom:0;left:0;right:0;background:white;padding:15px;box-shadow:0 -2px 10px rgba(0,0,0,0.1);display:flex;justify-content:space-between;align-items:center}
+.btn{background:#ff6b35;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer}
+.modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center;z-index:1000}
+.modal.active{display:flex}
+.modal-content{background:white;border-radius:12px;max-width:500px;width:90%;max-height:80vh;overflow:auto;padding:20px}
+.modal-content img{width:100%;border-radius:8px}
+.qty-selector{display:flex;gap:10px;align-items:center;margin:15px 0}
+.qty-selector button{width:40px;height:40px;border:1px solid #ddd;background:white;border-radius:8px;font-size:20px}
+#map{height:200px;border-radius:12px;margin:15px 0}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="container">
+    
+    <h1>Demo Store</h1>
+    <p>Tienda de prueba</p>
+  </div>
+</div>
+
+<div class="container">
+  <div class="section">
+    <h2>🔥 Promociones</h2>
+    <div class="grid" id="promosGrid"></div>
+  </div>
+  <div class="section">
+    <h2>🛠️ Servicios</h2>
+    <div class="grid" id="servicesGrid"></div>
+  </div>
+  <div class="section">
+    <h2>🛍️ Productos</h2>
+    <div class="grid" id="productsGrid"></div>
+  </div>
+</div>
+
+<div class="cart-bar">
+  <span>🛒 <span id="cartCount">0</span> items | $<span id="cartTotal">0</span></span>
+  <button class="btn" onclick="openCheckout()">Ver pedido</button>
+</div>
+
+<div class="modal" id="productModal">
+  <div class="modal-content">
+    <h3 id="modalName"></h3>
+    <img id="modalImage" src="">
+    <p id="modalDesc"></p>
+    <div class="price" id="modalPrice"></div>
+    <div class="qty-selector">
+      <button onclick="changeQty(-1)">-</button>
+      <span id="modalQty">1</span>
+      <button onclick="changeQty(1)">+</button>
+    </div>
+    <button class="btn" style="width:100%" onclick="addToCartFromModal()">Agregar al carrito</button>
+    <button style="width:100%;margin-top:10px;padding:10px;background:none;border:none" onclick="closeModal()">Cancelar</button>
+  </div>
+</div>
+
+<div class="modal" id="checkoutModal">
+  <div class="modal-content">
+    <h3>Tu pedido</h3>
+    <div id="cartItems"></div>
+    <select id="deliveryType" style="width:100%;padding:10px;margin:15px 0;border:1px solid #ddd;border-radius:8px">
+      <option value="pickup">🏪 Recoger en tienda</option>
+      <option value="delivery">🚚 Envío a domicilio</option>
+    </select>
+    <div id="deliverySection" style="display:none">
+      <input type="text" id="address" placeholder="Dirección" style="width:100%;padding:10px;margin:10px 0;border:1px solid #ddd;border-radius:8px">
+      <div id="map"></div>
+    </div>
+    <input type="text" id="customerName" placeholder="Tu nombre" style="width:100%;padding:10px;margin:10px 0;border:1px solid #ddd;border-radius:8px">
+    <input type="tel" id="customerPhone" placeholder="Teléfono" style="width:100%;padding:10px;margin:10px 0;border:1px solid #ddd;border-radius:8px">
+    <div style="display:flex;justify-content:space-between;margin:15px 0">
+      <strong>Total:</strong>
+      <strong id="checkoutTotal">$0</strong>
+    </div>
+    <button class="btn" style="width:100%" onclick="placeOrder()">Confirmar pedido</button>
+    <button style="width:100%;margin-top:10px;padding:10px;background:none;border:none" onclick="closeCheckout()">Cancelar</button>
+  </div>
+</div>
+
+<script>
+const STORE_ID='store_2f51e49bd68a';
+const API='https://script.google.com/macros/s/AKfycbznj6hXKUKqoM5lnOP_kC78LCve60Ekw0HQjLcqMA/dev';
+const CONFIG={"description":"Tienda de prueba","primaryColor":"#ff6b35"};
+let cart=JSON.parse(localStorage.getItem('cart_'+STORE_ID)||'[]');
+let currentProduct=null;
+let checkoutMap=null;
+
+document.getElementById('deliveryType').addEventListener('change',e=>{
+  document.getElementById('deliverySection').style.display=e.target.value==='delivery'?'block':'none';
+  if(e.target.value==='delivery') setTimeout(initCheckoutMap,100);
+});
+
+fetch(API+'?action=store.catalog&storeId='+STORE_ID).then(r=>r.json()).then(d=>{
+  renderGrid('promosGrid',d.promos);
+  renderGrid('servicesGrid',d.services);
+  renderGrid('productsGrid',d.products);
+  updateCartBar();
+});
+
+function renderGrid(id,items){
+  const grid=document.getElementById(id);
+  if(!items.length){grid.innerHTML='<p>No hay productos</p>';return}
+  grid.innerHTML=items.map(p=>'<div class="card" onclick="showModal(''+p.productId+'',''+p.name+'',''+(p.imageUrl||'')+'',''+(p.description||'')+'','+p.price+')"><img src="'+(p.imageUrl||'')+'"><h4>'+p.name+'</h4><div class="price">$'+p.price+'</div></div>').join('');
+}
+
+function showModal(id,name,img,desc,price){
+  currentProduct={productId:id,name,imageUrl:img,description:desc,price};
+  document.getElementById('modalName').textContent=name;
+  document.getElementById('modalImage').src=img||'';
+  document.getElementById('modalDesc').textContent=desc||'';
+  document.getElementById('modalPrice').textContent='$'+price;
+  document.getElementById('modalQty').textContent='1';
+  document.getElementById('productModal').classList.add('active');
+}
+
+function closeModal(){document.getElementById('productModal').classList.remove('active')}
+function changeQty(d){const e=document.getElementById('modalQty');e.textContent=Math.max(1,parseInt(e.textContent)+d)}
+function addToCartFromModal(){
+  const qty=parseInt(document.getElementById('modalQty').textContent);
+  const existing=cart.find(i=>i.productId===currentProduct.productId);
+  if(existing) existing.qty+=qty;
+  else cart.push({...currentProduct,qty});
+  localStorage.setItem('cart_'+STORE_ID,JSON.stringify(cart));
+  updateCartBar();
+  closeModal();
+}
+function updateCartBar(){
+  const count=cart.reduce((s,i)=>s+i.qty,0);
+  const total=cart.reduce((s,i)=>s+(i.price*i.qty),0);
+  document.getElementById('cartCount').textContent=count;
+  document.getElementById('cartTotal').textContent=total;
+}
+function openCheckout(){
+  if(!cart.length){alert('Agrega productos');return}
+  document.getElementById('cartItems').innerHTML=cart.map(i=>'<div style="display:flex;justify-content:space-between;padding:5px 0">'+i.qty+'x '+i.name+' <span>$'+(i.price*i.qty)+'</span></div>').join('');
+  document.getElementById('checkoutTotal').textContent='$'+cart.reduce((s,i)=>s+(i.price*i.qty),0);
+  document.getElementById('checkoutModal').classList.add('active');
+}
+function closeCheckout(){document.getElementById('checkoutModal').classList.remove('active')}
+function initCheckoutMap(){
+  if(checkoutMap)return;
+  checkoutMap=L.map('map').setView([19.4326,-99.1332],13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(checkoutMap);
+  L.marker([19.4326,-99.1332]).addTo(checkoutMap).bindPopup('Demo Store').openPopup();
+  if(navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(p=>{
+      checkoutMap.setView([p.coords.latitude,p.coords.longitude],14);
+      L.marker([p.coords.latitude,p.coords.longitude]).addTo(checkoutMap).bindPopup('Tu ubicación');
+      fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+p.coords.latitude+'&lon='+p.coords.longitude).then(r=>r.json()).then(d=>{document.getElementById('address').value=d.display_name});
+    });
+  }
+}
+async function placeOrder(){
+  const name=document.getElementById('customerName').value;
+  const phone=document.getElementById('customerPhone').value;
+  if(!name||!phone){alert('Nombre y teléfono requeridos');return}
+  const deliveryType=document.getElementById('deliveryType').value;
+  const total=cart.reduce((s,i)=>s+(i.price*i.qty),0);
+  const res=await fetch(API,{method:'POST',body:JSON.stringify({action:'order.create',storeId:STORE_ID,customer:{name,phone},items:cart,total,deliveryType,address:document.getElementById('address').value})});
+  const d=await res.json();
+  if(d.ok){alert('Pedido #'+d.orderId);cart=[];localStorage.removeItem('cart_'+STORE_ID);window.location.href='monitoreo.html?orderId='+d.orderId}
+}
+
+</script>
+</body>
+</html>
