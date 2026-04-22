@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panel Maestro - LandingKit</title>
+<style>body{font-family:system-ui;background:#f5f5f5}.login{max-width:400px;margin:100px auto;background:white;padding:30px;border-radius:12px}input{width:100%;padding:12px;margin:10px 0;border:1px solid #ddd;border-radius:8px}button{width:100%;padding:12px;background:#00d98b;color:white;border:none;border-radius:8px;cursor:pointer}.dashboard{max-width:1200px;margin:20px auto;padding:20px}.header{background:#00d98b;color:white;padding:20px;border-radius:12px;display:flex;justify-content:space-between}table{width:100%;background:white;border-radius:12px;padding:20px;margin-top:20px}th,td{padding:12px;text-align:left;border-bottom:1px solid #eee}</style>
+</head>
+<body>
+<div id="login" class="login">
+  <h2>🔐 Panel Maestro</h2>
+  <input type="email" id="email" placeholder="Email de administrador">
+  <button onclick="requestCode()">Enviar código</button>
+  <div id="codeSection" style="display:none;margin-top:15px">
+    <input type="text" id="code" placeholder="Código de 6 caracteres">
+    <button onclick="verifyCode()">Verificar</button>
+  </div>
+</div>
+<div id="dashboard" class="dashboard" style="display:none">
+  <div class="header"><h1>LandingKit Admin</h1><button onclick="logout()" style="background:rgba(255,255,255,0.2);width:auto;padding:8px 16px">Salir</button></div>
+  <div id="stats"></div>
+  <button onclick="showCreateModal()" style="background:#6366f1;color:white;border:none;padding:12px 24px;border-radius:8px;margin:20px 0">+ Nueva Tienda</button>
+  <table id="storesTable"><thead><tr><th>Tienda</th><th>Plan</th><th>Estado</th></tr></thead><tbody></tbody></table>
+</div>
+<script>
+const API='https://script.google.com/macros/s/AKfycbznj6hXKUKqoM5lnOP_kC78LCve60Ekw0HQjLcqMA/dev';
+let token=localStorage.getItem('adminToken');
+if(token) showDashboard();
+
+async function requestCode(){
+  const email=document.getElementById('email').value;
+  const res=await fetch(API,{method:'POST',body:JSON.stringify({action:'admin.requestCode',email})});
+  const d=await res.json();
+  if(d.ok){document.getElementById('codeSection').style.display='block';alert('Código enviado a tu email')}
+}
+async function verifyCode(){
+  const email=document.getElementById('email').value;
+  const code=document.getElementById('code').value;
+  const res=await fetch(API,{method:'POST',body:JSON.stringify({action:'admin.verifyCode',email,code})});
+  const d=await res.json();
+  if(d.ok){localStorage.setItem('adminToken',d.token);showDashboard()}
+}
+async function showDashboard(){
+  document.getElementById('login').style.display='none';
+  document.getElementById('dashboard').style.display='block';
+  token=localStorage.getItem('adminToken');
+  const res=await fetch(API+'?action=admin.stats&token='+token);
+  const d=await res.json();
+  document.getElementById('stats').innerHTML='Total: '+d.totalStores+' | Activas: '+d.activeStores;
+  loadStores();
+}
+async function loadStores(){
+  const res=await fetch(API+'?action=admin.stores.list&token='+token);
+  const d=await res.json();
+  document.querySelector('#storesTable tbody').innerHTML=d.stores.map(s=>'<tr><td>'+s.name+'</td><td>'+s.plan+'</td><td>'+s.status+'</td></tr>').join('');
+}
+function logout(){localStorage.clear();location.reload();}
+</script>
+</body>
+</html>
